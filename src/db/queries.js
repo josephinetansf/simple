@@ -426,6 +426,156 @@ export async function createNotification(db, data) {
   return id;
 }
 
+// ── Helper functions for OCR-based record creation ─────────────
+
+/**
+ * Find a property by name (case-insensitive partial match).
+ * Returns property id or null.
+ */
+export async function findPropertyByName(db, name) {
+  if (!name) return null;
+  const rows = await db.getAllAsync(
+    "SELECT id FROM properties WHERE LOWER(name) LIKE LOWER(?) LIMIT 1",
+    [`%${name}%`]
+  );
+  return rows.length > 0 ? rows[0].id : null;
+}
+
+/**
+ * Find an active tenancy by tenant name and property id.
+ * An active tenancy has end_date >= today.
+ */
+export async function findActiveTenancy(db, tenantName, propertyId) {
+  if (!tenantName || !propertyId) return null;
+  const today = new Date().toISOString().split('T')[0];
+  const rows = await db.getAllAsync(
+    `SELECT id FROM tenancies 
+     WHERE tenant_name LIKE ? AND property_id = ? AND end_date >= ?
+     ORDER BY end_date DESC LIMIT 1`,
+    [`%${tenantName}%`, propertyId, today]
+  );
+  return rows.length > 0 ? rows[0].id : null;
+}
+
+/**
+ * Ensure a property exists. If not found by name, create one.
+ * Returns the property id.
+ */
+export async function ensureProperty(db, propertyName, address) {
+  let propId = await findPropertyByName(db, propertyName);
+  if (propId) return propId;
+  
+  // Create new property
+  const name = propertyName || 'Unknown Property';
+  const addr = address || '';
+  const id = generateId();
+  await db.runAsync(
+    'INSERT INTO properties (id, name, address) VALUES (?, ?, ?)',
+    [id, name, addr]
+  );
+  return id;
+}
+
+/**
+ * Create a tenancy record from OCR-extracted data.
+ * Ensures the property exists first.
+ * Returns the tenancy id.
+ */
+export async function createTenancyFromOCR(db, data, documentPath) {
+  // Ensure property exists
+  const propertyId = await ensureProperty(
+    db,
+    data.propertyAddress || data.propertyName || 'Unknown',
+    ''
+  );
+  
+  // Build tenancy data
+  const tenancyData = {
+    property_id: propertyId,
+    tenant_name: data.tenantName || data.tenant || 'Unknown Tenant',
+    unit_number: data.unitNumber || data.unit || null,
+    start_date: data.startDate || data.start_date || new Date().toISOString().split('T')[0],
+    end_date: data.endDate || data.end_date || '',
+    rental_amount: data.monthlyRent || data.rentalAmount || data.rent || 0,
+    due_day: data.dueDay || data.due_day || 1,
+    document_path: documentPath || null,
+  };
+  
+  return await createTenancy(db, tenancyData);
+}
+
+/**
+ * Create a rental record from OCR-extracted data.
+ * Finds or creates the tenancy link.
+ * Returns the rental id.
+ */
+export async function createRentalFromOCR(db, data, documentPath) {
+  // Try to find matching tenancy by tenant name
+  let tenancyId = null;
+  if (data.tenantName || data.payerName) {
+    // Search across all tenancies for a name match
+    const allTenancies = await getAllTenancies(db);
+    const searchName = (data.tenantName || data.payerName || '').toLowerCase();
+    for (const t of allTenancies) {
+      if (t.tenant_name.toLowerCase().includes(searchName) || 
+          searchName.includes(t.tenant_name.toLowerCase())) {
+        tenancyId = t.id;
+        break;
+      }
+    }
+  }
+  
+  // If no tenancy found, use the first active one (or null if none)
+  if (!tenancyId) {
+    const today = new Date().toISOString().split('T')[0];
+    const rows = await db.getAllAsync(
+      `SELECT id FROM tenancies WHERE end_date >= ? LIMIT 1`,
+      [today]
+    );
+    if (rows.length > 0) tenancyId = rows[0].id;
+  }
+  
+  // Build rental data
+  const rentalData = {
+    tenancy_id: tenancyId || '',
+    payment_date: data.paymentDate || data.date || new Date().toISOString().split('T')[0],
+    amount: data.amount || 0,
+    period_start: data.periodStart || data.period_start || '',
+    period_end: data.periodEnd || data.period_end || '',
+    document_path: documentPath || null,
+    received_via: data.receivedVia || data.method || 'bank_transfer',
+  };
+  
+  return await createRental(db, rentalData);
+}
+
+/**
+ * Create an expense record from OCR-extracted data.
+ * Ensures the property exists first.
+ * Returns the expense id.
+ */
+export async function createExpenseFromOCR(db, data, documentPath) {
+  // Ensure property exists
+  const propertyId = await ensureProperty(
+    db,
+    data.propertyName || data.property || 'Unknown',
+    ''
+  );
+  
+  // Build expense data
+  const expenseData = {
+    property_id: propertyId,
+    category: data.category || 'Other',
+    payment_date: data.paymentDate || data.date || new Date().toISOString().split('T')[0],
+    amount: data.amount || 0,
+    period_start: data.periodStart || data.period_start || null,
+    period_end: data.periodEnd || data.period_end || null,
+    document_path: documentPath || null,
+  };
+  
+  return await createExpense(db, expenseData);
+}
+
 // ── Row-to-object mappers ──────────────────────────────────────
 
 function rowToProperty(row) {

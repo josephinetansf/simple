@@ -59,15 +59,28 @@ export default function RentalListPage() {
     );
   }
 
-  function handleExtracted(result) {
+  async function handleExtracted(result) {
     if (result.type === 'rental' && result.data) {
-      setShowUploader(false);
-      Alert.alert(
-        'Payment Slip Extracted',
-        `Amount: RM ${result.data.amount?.toFixed(2) || '0.00'} on ${result.data.paymentDate || 'unknown date'}`,
-        [{ text: 'OK' }]
-      );
-      // TODO: Create rental record in database with extracted data
+      try {
+        const { createRentalFromOCR } = require('../db/queries');
+        // result.data contains: amount, paymentDate, periodStart, periodEnd, payerName, tenantName
+        // result.documentPath contains the saved file path
+        const rentalId = await createRentalFromOCR(
+          global.db,
+          result.data,
+          result.documentPath || null
+        );
+        setShowUploader(false);
+        await loadRentals();
+        Alert.alert(
+          'Rental Record Created',
+          `Successfully recorded payment of RM ${result.data.amount?.toFixed(2) || '0.00'} on ${result.data.paymentDate || 'unknown date'}.`,
+          [{ text: 'OK' }]
+        );
+      } catch (err) {
+        console.error('[RentalList] Failed to create rental:', err);
+        Alert.alert('Error', `Failed to save rental record: ${err.message}`);
+      }
     }
   }
 

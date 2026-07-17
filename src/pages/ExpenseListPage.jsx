@@ -59,15 +59,28 @@ export default function ExpenseListPage() {
     );
   }
 
-  function handleExtracted(result) {
+  async function handleExtracted(result) {
     if (result.type === 'expense' && result.data) {
-      setShowUploader(false);
-      Alert.alert(
-        'Bill Extracted',
-        `${result.data.category || 'Expense'}: RM ${result.data.amount?.toFixed(2) || '0.00'} from ${result.data.vendor || 'unknown vendor'}`,
-        [{ text: 'OK' }]
-      );
-      // TODO: Create expense record in database with extracted data
+      try {
+        const { createExpenseFromOCR } = require('../db/queries');
+        // result.data contains: amount, paymentDate, category, vendor, propertyName
+        // result.documentPath contains the saved file path
+        const expenseId = await createExpenseFromOCR(
+          global.db,
+          result.data,
+          result.documentPath || null
+        );
+        setShowUploader(false);
+        await loadExpenses();
+        Alert.alert(
+          'Expense Record Created',
+          `${result.data.category || 'Expense'}: RM ${result.data.amount?.toFixed(2) || '0.00'} from ${result.data.vendor || 'unknown vendor'}`,
+          [{ text: 'OK' }]
+        );
+      } catch (err) {
+        console.error('[ExpenseList] Failed to create expense:', err);
+        Alert.alert('Error', `Failed to save expense record: ${err.message}`);
+      }
     }
   }
 

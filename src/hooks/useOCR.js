@@ -123,7 +123,7 @@ export function useOCR() {
       }
       
       // Success!
-      setResult(parsedData);
+      setResult({ ...parsedData, documentPath: savedPath });
       setStatus('success');
       setError(null);
       

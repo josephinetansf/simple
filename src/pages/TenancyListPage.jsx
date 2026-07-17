@@ -59,15 +59,28 @@ export default function TenancyListPage() {
     );
   }
 
-  function handleExtracted(result) {
+  async function handleExtracted(result) {
     if (result.type === 'tenancy' && result.data) {
-      setShowUploader(false);
-      Alert.alert(
-        'Tenancy Extracted',
-        `Found: ${result.data.tenantName || 'Unknown'} at ${result.data.propertyAddress || 'Unknown'}`,
-        [{ text: 'OK' }]
-      );
-      // TODO: Create tenancy record in database with extracted data
+      try {
+        const { createTenancyFromOCR } = require('../db/queries');
+        // result.result.data contains: tenantName, propertyAddress, unitNumber, startDate, endDate, monthlyRent, dueDay
+        // result.result.documentPath contains the saved file path
+        const tenancyId = await createTenancyFromOCR(
+          global.db,
+          result.data,
+          result.documentPath || null
+        );
+        setShowUploader(false);
+        await loadTenancies();
+        Alert.alert(
+          'Tenancy Created',
+          `Successfully created tenancy for ${result.data.tenantName || 'Unknown'} at ${result.data.propertyAddress || 'Unknown'} property.`,
+          [{ text: 'OK' }]
+        );
+      } catch (err) {
+        console.error('[TenancyList] Failed to create tenancy:', err);
+        Alert.alert('Error', `Failed to save tenancy: ${err.message}`);
+      }
     }
   }
 
