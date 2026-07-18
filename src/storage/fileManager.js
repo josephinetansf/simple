@@ -7,7 +7,7 @@
  * document directory (persistent across restarts).
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const DOCUMENT_SUBDIR = 'documents';
 

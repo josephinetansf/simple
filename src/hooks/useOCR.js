@@ -52,7 +52,7 @@ export function useOCR() {
       setProgress(10);
       
       pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType.Images,
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 0.8,
         base64: false, // Don't load base64 for large images

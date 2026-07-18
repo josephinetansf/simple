@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAllTenancies, deleteTenancy } from '../db/queries';
 import TenancyCard from '../components/TenancyCard';
 import DocumentUploader from '../components/DocumentUploader';
@@ -101,45 +102,51 @@ export default function TenancyListPage() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Tenancies</Text>
-        <Text style={styles.count}>{tenancies.length} record{tenancies.length !== 1 ? 's' : ''}</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowUploader(true)}>
-          <Text style={styles.addButtonText}>+ Upload</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <Text style={styles.loadingText}>Loading tenancies...</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Tenancies</Text>
+          <Text style={styles.count}>{tenancies.length} record{tenancies.length !== 1 ? 's' : ''}</Text>
+          <TouchableOpacity style={styles.addButton} onPress={() => setShowUploader(true)}>
+            <Text style={styles.addButtonText}>+ Upload</Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={tenancies}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TenancyCard
-              tenancy={item}
-              onDelete={() => handleDelete(item.id)}
-            />
-          )}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🏠</Text>
-              <Text style={styles.emptyText}>No tenancies yet</Text>
-              <Text style={styles.emptySubtext}>Upload a tenancy agreement to get started</Text>
-            </View>
-          }
-        />
-      )}
-    </View>
+
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <Text style={styles.loadingText}>Loading tenancies...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={tenancies}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TenancyCard
+                tenancy={item}
+                onDelete={() => handleDelete(item.id)}
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>🏠</Text>
+                <Text style={styles.emptyText}>No tenancies yet</Text>
+                <Text style={styles.emptySubtext}>Upload a tenancy agreement to get started</Text>
+              </View>
+            }
+          />
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+  },
+  safeArea: {
     flex: 1,
     backgroundColor: '#f3f4f6',
   },

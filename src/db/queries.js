@@ -7,6 +7,7 @@
  *
  * JSDoc types used for runtime documentation (no TypeScript).
  */
+import { generateId } from './schema.js';
 
 // ── Properties ─────────────────────────────────────────────────
 

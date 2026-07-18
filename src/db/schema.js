@@ -91,10 +91,14 @@ export const SCHEMA_SQL = [
  * Falls back to Math.random if crypto.randomUUID is unavailable.
  */
 export function generateId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch (e) {
+    // crypto.randomUUID not available in this environment
   }
-  // Fallback: pseudo-UUID v4
+  // Fallback: pseudo-UUID v4 using Math.random
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;

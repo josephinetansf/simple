@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { getAllExpenses, deleteExpense } from '../db/queries';
 import ExpenseCard from '../components/ExpenseCard';
 import DocumentUploader from '../components/DocumentUploader';
@@ -101,45 +102,51 @@ export default function ExpenseListPage() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Expenses</Text>
-        <Text style={styles.count}>{expenses.length} record{expenses.length !== 1 ? 's' : ''}</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowUploader(true)}>
-          <Text style={styles.addButtonText}>+ Upload</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <Text style={styles.loadingText}>Loading expenses...</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Expenses</Text>
+          <Text style={styles.count}>{expenses.length} record{expenses.length !== 1 ? 's' : ''}</Text>
+          <TouchableOpacity style={styles.addButton} onPress={() => setShowUploader(true)}>
+            <Text style={styles.addButtonText}>+ Upload</Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          data={expenses}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <ExpenseCard
-              expense={item}
-              onDelete={() => handleDelete(item.id)}
-            />
-          )}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🧾</Text>
-              <Text style={styles.emptyText}>No expenses yet</Text>
-              <Text style={styles.emptySubtext}>Upload a bill to track expenses</Text>
-            </View>
-          }
-        />
-      )}
-    </View>
+
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <Text style={styles.loadingText}>Loading expenses...</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={expenses}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <ExpenseCard
+                expense={item}
+                onDelete={() => handleDelete(item.id)}
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>🧾</Text>
+                <Text style={styles.emptyText}>No expenses yet</Text>
+                <Text style={styles.emptySubtext}>Upload a bill to track expenses</Text>
+              </View>
+            }
+          />
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+  },
+  safeArea: {
     flex: 1,
     backgroundColor: '#f3f4f6',
   },

@@ -7,7 +7,7 @@
  */
 
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 /**
  * Extract text from an image using ML Kit text recognition.
