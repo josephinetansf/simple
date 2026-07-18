@@ -35,8 +35,8 @@ export function parseDate(dateString) {
     return normalizeDate(match[3], match[2], match[1]);
   }
   
-  // Try DD Month YYYY (e.g., "15 January 2026")
-  match = dateString.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  // Try DD Month YYYY (e.g., "15 January 2026") — also handles ordinals like "01ST", "31ST"
+  match = dateString.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})$/i);
   if (match) {
     const monthMap = {
       january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
@@ -109,40 +109,126 @@ export function parseTenancyAgreement(text) {
     securityDeposit: null,
   };
   
-  // Extract tenant name
-  let match = text.match(/(?:Tenant|Lessee)[:\s]+([A-Z][a-zA-Z\s\.]+?)(?=IC|No|:|$)/i);
-  if (match) result.tenantName = match[1].trim();
+  // ── Strategy 1: Table-style extraction (labels in left column, values in right) ──
+  // Common in Malaysian tenancy agreements formatted as schedules
   
-  // Extract property address
-  match = text.match(/(?:Building|Property|Address)[:\s]+([^\n]+)/i);
-  if (match) result.propertyAddress = match[1].trim();
-  
-  // Extract unit number
-  match = text.match(/(?:Unit|No\.?|Lot)[:\s]+([^\n]+)/i);
-  if (match) result.unitNumber = match[1].trim();
-  
-  // Extract start date
-  match = text.match(/(?:Start|Commencement|From)[:\s]+([^\n]+)/i);
-  if (match) result.startDate = parseDate(match[1].trim());
-  
-  // Extract end date
-  match = text.match(/(?:End|Expiry|To)[:\s]+([^\n]+)/i);
-  if (match) result.endDate = parseDate(match[1].trim());
-  
-  // Extract monthly rent
-  match = text.match(/(?:Monthly\s+)?Rent[:\s]*RM?\s*([\d,]+\.?\d*)/i);
-  if (match) result.monthlyRent = parseAmount(match[1]);
-  
-  // Extract due day
-  match = text.match(/Due\s+(?:Day)[:\s]*(\d{1,2})(?:st|nd|rd|th)?/i);
+  // Tenant name: look for "Tenant Name" label, then extract value from adjacent cell/row
+  // In table format, the name may appear after NRIC/Address metadata lines
+  let match = text.match(/Tenant\s+Name\s*\n\s*NRIC\s*\n\s*\d{6}-\d{4}-\d{4}\s*\n\s*Address\s*\n\s*[^\n]*\s*\n\s*[^\n]*\s*\n\s*([A-Z][A-Z\s]{5,})/i);
   if (!match) {
-    match = text.match(/(?:due|payable)[:\s]+(\d{1,2})(?:st|nd|rd|th)?/i);
+    match = text.match(/Tenant\s+Name\s*\n\s*\n\s*([A-Z][A-Z\s]{5,})/i);
   }
-  if (match) result.dueDay = parseInt(match[1], 10);
+  if (!match) {
+    // Skip past any metadata lines (NRIC, Address, etc.) and grab the all-caps name
+    match = text.match(/Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?\d{6}-\d{4}-\d{4})?(?:Address[^0-9]*)?([A-Z][A-Z\s]{5,})/i);
+  }
+  if (!match) {
+    match = text.match(/3\)\s*Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?)?([A-Z][A-Z\s\.]+)/i);
+  }
+  if (match) {
+    result.tenantName = match[1].trim().replace(/\s+/g, ' ').toUpperCase();
+    // Clean up: remove any stray metadata words from anywhere in the name (single pass)
+    const metaWords = 'NRIC|IC|PASSPORT|DATE\\s+OF\\s+BIRTH|BIRTHDATE|ADDRESS|ADDR|NO\\.?|LOT|JALAN|JL|TMN|TAMAN|KOTA|CITY|POSTAL\\s*CODE|POS\\s*KOD|WANGISAN|NAME|BUILDING|BLOCK|STREET';
+    result.tenantName = result.tenantName.replace(new RegExp(`\\b(?:${metaWords})\\b`, 'gi'), '');
+    result.tenantName = result.tenantName.replace(/\s{2,}/g, ' ').trim();
+  }
   
-  // Extract security deposit
-  match = text.match(/(?:Security\s+)?Deposit[:\s]*RM?\s*([\d,]+\.?\d*)/i);
-  if (match) result.securityDeposit = parseAmount(match[1]);
+  // Property address: look for "Property Address" label
+  match = text.match(/Property\s+Address[^0-9]*?([^\n]+)/i);
+  if (!match) {
+    match = text.match(/4\)\s*Property\s+Address[^0-9]*?([^\n]+)/i);
+  }
+  if (match) {
+    result.propertyAddress = match[1].trim();
+  }
+  
+  // Unit number: look for "Unit" or "No." in property address context
+  match = text.match(/(?:Unit|No\.?|Lot)[:\s]+([^\n]+)/i);
+  if (match) {
+    result.unitNumber = match[1].trim();
+  }
+  
+  // Start date: look for "Date of Commencement" or "Commencement"
+  match = text.match(/Date\s+of\s+Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
+  if (!match) {
+    match = text.match(/Commencement[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+  }
+  if (!match) {
+    match = text.match(/Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
+  }
+  if (match) {
+    result.startDate = parseDate(match[1].trim());
+  }
+  
+  // End date: look for "Date of Termination" or "Termination"
+  match = text.match(/Date\s+of\s+Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
+  if (!match) {
+    match = text.match(/Termination[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+  }
+  if (!match) {
+    match = text.match(/Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
+  }
+  if (match) {
+    result.endDate = parseDate(match[1].trim());
+  }
+  
+  // Monthly rent: look for "Reserved Rent" or "Rent" with RM amount
+  match = text.match(/Reserved\s+Rent[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+  if (!match) {
+    match = text.match(/per\s+month[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+  }
+  if (!match) {
+    match = text.match(/Rent[:\s]*RM?\s*([\d,]+\.?\d*)/i);
+  }
+  if (match) {
+    result.monthlyRent = parseAmount(match[1]);
+  }
+  
+  // Due day: look for "payable in advance on or before the COMMENCEMENT day" pattern
+  match = text.match(/payable\s+in\s+advance\s+on\s+or\s+before\s+the\s+(?:Commencement|due|payment)\s+day\s+of\s+each/i);
+  if (match) {
+    result.dueDay = 1; // Default to 1st if "on commencement day"
+  } else {
+    match = text.match(/on\s+or\s+before\s+the\s+(?:Commencement|due|payment)\s+day\s+of\s+each/i);
+    if (match) {
+      result.dueDay = 1;
+    } else {
+      match = text.match(/payable\s+in\s+advance\s+on\s+or\s+before\s+the\s+(\d{1,2})(?:st|nd|rd|th)\s+day/i);
+      if (match) {
+        result.dueDay = parseInt(match[1], 10);
+      } else {
+        match = text.match(/Due\s+(?:Day)[:\s]*(\d{1,2})(?:st|nd|rd|th)?/i);
+        if (match) {
+          result.dueDay = parseInt(match[1], 10);
+        } else {
+          match = text.match(/(?:due|payable)[:\s]+(\d{1,2})(?:st|nd|rd|th)?/i);
+          if (match) {
+            result.dueDay = parseInt(match[1], 10);
+          }
+        }
+      }
+    }
+  }
+  
+  // Security deposit: look for "Security" under Deposits section
+  match = text.match(/Deposits[^0-9]*?Security[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+  if (!match) {
+    match = text.match(/Security[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+  }
+  if (match) {
+    result.securityDeposit = parseAmount(match[1]);
+  }
+  
+  // ── Strategy 2: Legacy field-style extraction (fallback) ──
+  if (!result.tenantName) {
+    match = text.match(/(?:Tenant|Lessee)[:\s]+([A-Z][a-zA-Z\s\.]+?)(?=IC|No|:|$)/i);
+    if (match) result.tenantName = match[1].trim();
+  }
+  
+  if (!result.monthlyRent) {
+    match = text.match(/(?:Monthly\s+)?Rent[:\s]*RM?\s*([\d,]+\.?\d*)/i);
+    if (match) result.monthlyRent = parseAmount(match[1]);
+  }
   
   // Validate: need at least 3 key fields to consider it a match
   const keyFields = [result.tenantName, result.propertyAddress, result.monthlyRent, result.startDate, result.endDate];
