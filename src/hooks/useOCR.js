@@ -85,6 +85,10 @@ export function useOCR() {
         return;
       }
       
+      // DEBUG: log extracted text for troubleshooting
+      console.log('[OCR] Extracted text length:', extractedText.length);
+      console.log('[OCR] Extracted text preview:', extractedText.substring(0, 500));
+      
       // Step 4: Parse extracted text
       let parsedData;
       
@@ -93,6 +97,7 @@ export function useOCR() {
         switch (documentType) {
           case 'tenancy': {
             const tenancyData = parseTenancyAgreement(extractedText);
+            console.log('[OCR] Tenancy parser result:', tenancyData);
             parsedData = tenancyData ? { type: 'tenancy', data: tenancyData } : null;
             break;
           }
@@ -117,6 +122,7 @@ export function useOCR() {
       setProgress(100);
       
       if (!parsedData) {
+        console.error('[OCR] Parsing failed. Extracted text:', extractedText);
         setError('Could not parse document. Please enter details manually.');
         setStatus('error');
         return;

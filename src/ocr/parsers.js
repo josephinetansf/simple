@@ -234,6 +234,10 @@ export function parseTenancyAgreement(text) {
   const keyFields = [result.tenantName, result.propertyAddress, result.monthlyRent, result.startDate, result.endDate];
   const matchedCount = keyFields.filter(f => f !== null).length;
   
+  // DEBUG: log parsing results
+  console.log('[Parser] Tenancy match count:', matchedCount, '/', keyFields.length);
+  console.log('[Parser] Fields:', JSON.stringify(result));
+  
   if (matchedCount < 3) return null;
   
   return result;
