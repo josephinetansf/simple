@@ -109,132 +109,181 @@ export function parseTenancyAgreement(text) {
     securityDeposit: null,
   };
   
-  // ── Strategy 1: Table-style extraction (labels in left column, values in right) ──
-  // Common in Malaysian tenancy agreements formatted as schedules
+  // ═══════════════════════════════════════════════════════════
+  // STRATEGY A: Standard agreement format (most common)
+  // "Tenant: Ms. Sarah Tan" or "BETWEEN: ... Tenant: ..."
+  // Only matches if we find a reasonable tenant name (2+ words, not just "Name")
+  // ═══════════════════════════════════════════════════════════
   
-  // Tenant name: look for "Tenant Name" label, then extract value from adjacent cell/row
-  // In table format, the name may appear after NRIC/Address metadata lines
-  let match = text.match(/Tenant\s+Name\s*\n\s*NRIC\s*\n\s*\d{6}-\d{4}-\d{4}\s*\n\s*Address\s*\n\s*[^\n]*\s*\n\s*[^\n]*\s*\n\s*([A-Z][A-Z\s]{5,})/i);
+  // Tenant name — standard format: "Tenant: Name" or "AND Tenant: Name"
+  // Exclude IC number words from capture
+  let match = text.match(/(?:AND\s+)?Tenant[:\s]+(?:Ms\.?|Mr\.?|Mrs\.?|Dr\.?|Dato\'?|Tan\s+Sri)?\s*([A-Z][a-zA-Z\s\.\'\-]+?)(?:\s+IC|\s+No\.|$)/im);
   if (!match) {
-    match = text.match(/Tenant\s+Name\s*\n\s*\n\s*([A-Z][A-Z\s]{5,})/i);
+    match = text.match(/(?:AND\s+)?Tenant[:\s]+(?:Ms\.?|Mr\.?|Mrs\.?|Dr\.?|Dato\'?|Tan\s+Sri)?\s*([A-Z][a-zA-Z\s\.\'\-]+)/im);
   }
-  if (!match) {
-    // Skip past any metadata lines (NRIC, Address, etc.) and grab the all-caps name
-    match = text.match(/Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?\d{6}-\d{4}-\d{4})?(?:Address[^0-9]*)?([A-Z][A-Z\s]{5,})/i);
-  }
-  if (!match) {
-    match = text.match(/3\)\s*Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?)?([A-Z][A-Z\s\.]+)/i);
-  }
-  if (match) {
-    result.tenantName = match[1].trim().replace(/\s+/g, ' ').toUpperCase();
-    // Clean up: remove any stray metadata words from anywhere in the name (single pass)
-    const metaWords = 'NRIC|IC|PASSPORT|DATE\\s+OF\\s+BIRTH|BIRTHDATE|ADDRESS|ADDR|NO\\.?|LOT|JALAN|JL|TMN|TAMAN|KOTA|CITY|POSTAL\\s*CODE|POS\\s*KOD|WANGISAN|NAME|BUILDING|BLOCK|STREET';
-    result.tenantName = result.tenantName.replace(new RegExp(`\\b(?:${metaWords})\\b`, 'gi'), '');
-    result.tenantName = result.tenantName.replace(/\s{2,}/g, ' ').trim();
+  if (match && match[1].trim().split(/\s+/).length >= 2 && !/^(?:NAME|ADDRESS|NRIC)$/i.test(match[1].trim())) {
+    result.tenantName = match[1].trim().replace(/\s+/g, ' ');
   }
   
-  // Property address: look for "Property Address" label
-  match = text.match(/Property\s+Address[^0-9]*?([^\n]+)/i);
+  // Property address — "Address:" or "Address <value>" on same line
+  match = text.match(/Address[:\s]+([^\n]{10,})/im);
   if (!match) {
-    match = text.match(/4\)\s*Property\s+Address[^0-9]*?([^\n]+)/i);
+    match = text.match(/(?:Building|Premises)[:\s]+([^\n]{10,})/im);
   }
-  if (match) {
-    result.propertyAddress = match[1].trim();
+  if (match && match[1].trim().length > 10) {
+    const addr = match[1].trim().replace(/\s+IC\s*$/i, '').replace(/\s+No\.\s*[\d\-]+\s*$/i, '').trim();
+    // Reject if it looks like a bank name (common in SCHEDULE format)
+    const bankNames = /BANK|RHB|CIMB|MAYBANK|PUBLIC\s*BANK|HONG\s*LEONG|AM\s*BANK|OCBC|UOB/i;
+    if (!bankNames.test(addr)) {
+      result.propertyAddress = addr;
+    }
   }
   
-  // Unit number: look for "Unit" or "No." in property address context
-  match = text.match(/(?:Unit|No\.?|Lot)[:\s]+([^\n]+)/i);
+  // Unit number — "Unit No:" or "Unit:"
+  match = text.match(/(?:Unit\s+No\.?|Unit|Lot)[:\s]+([^\n]+)/im);
   if (match) {
     result.unitNumber = match[1].trim();
   }
   
-  // Start date: look for "Date of Commencement" or "Commencement"
-  match = text.match(/Date\s+of\s+Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
-  if (!match) {
-    match = text.match(/Commencement[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
-  }
-  if (!match) {
-    match = text.match(/Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
-  }
+  // Start date — "Start Date:" or "Commencement Date:" or "From:"
+  match = text.match(/(?:Start\s+Date|Commencement\s+Date|From|Tenancy\s+Start)[:\s]+([^\n]+)/im);
   if (match) {
     result.startDate = parseDate(match[1].trim());
   }
   
-  // End date: look for "Date of Termination" or "Termination"
-  match = text.match(/Date\s+of\s+Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
-  if (!match) {
-    match = text.match(/Termination[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
-  }
-  if (!match) {
-    match = text.match(/Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
-  }
+  // End date — "End Date:" or "Expiry Date:" or "To:"
+  match = text.match(/(?:End\s+Date|Expiry\s+Date|To|Tenancy\s+End|Termination\s+Date)[:\s]+([^\n]+)/im);
   if (match) {
     result.endDate = parseDate(match[1].trim());
   }
   
-  // Monthly rent: look for "Reserved Rent" or "Rent" with RM amount
-  match = text.match(/Reserved\s+Rent[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
-  if (!match) {
-    match = text.match(/per\s+month[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
-  }
-  if (!match) {
-    match = text.match(/Rent[:\s]*RM?\s*([\d,]+\.?\d*)/i);
-  }
+  // Monthly rent — "Monthly Rent:" or "Rent:"
+  match = text.match(/(?:Monthly\s+)?Rent(?:al)?[:\s]*RM?\s*([\d,]+\.?\d*)/im);
   if (match) {
     result.monthlyRent = parseAmount(match[1]);
   }
   
-  // Due day: look for "payable in advance on or before the COMMENCEMENT day" pattern
-  match = text.match(/payable\s+in\s+advance\s+on\s+or\s+before\s+the\s+(?:Commencement|due|payment)\s+day\s+of\s+each/i);
+  // Due day — "Due Day:" or "payable on or before the Xth day"
+  match = text.match(/Due\s+Day[:\s]*(\d{1,2})(?:st|nd|rd|th)?/im);
+  if (!match) {
+    match = text.match(/payable\s+on\s+or\s+before\s+the\s+(\d{1,2})(?:st|nd|rd|th)?\s+day/im);
+  }
+  if (!match) {
+    match = text.match(/Due\s+(?:Day)[:\s]*(\d{1,2})(?:st|nd|rd|th)?/im);
+  }
   if (match) {
-    result.dueDay = 1; // Default to 1st if "on commencement day"
-  } else {
-    match = text.match(/on\s+or\s+before\s+the\s+(?:Commencement|due|payment)\s+day\s+of\s+each/i);
-    if (match) {
-      result.dueDay = 1;
-    } else {
-      match = text.match(/payable\s+in\s+advance\s+on\s+or\s+before\s+the\s+(\d{1,2})(?:st|nd|rd|th)\s+day/i);
-      if (match) {
-        result.dueDay = parseInt(match[1], 10);
-      } else {
-        match = text.match(/Due\s+(?:Day)[:\s]*(\d{1,2})(?:st|nd|rd|th)?/i);
-        if (match) {
-          result.dueDay = parseInt(match[1], 10);
-        } else {
-          match = text.match(/(?:due|payable)[:\s]+(\d{1,2})(?:st|nd|rd|th)?/i);
-          if (match) {
-            result.dueDay = parseInt(match[1], 10);
-          }
-        }
-      }
-    }
+    result.dueDay = parseInt(match[1], 10);
   }
   
-  // Security deposit: look for "Security" under Deposits section
-  match = text.match(/Deposits[^0-9]*?Security[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+  // Security deposit — "Security Deposit:" or "Deposit:"
+  match = text.match(/(?:Security\s+)?Deposit[:\s]*RM?\s*([\d,]+\.?\d*)/im);
   if (!match) {
-    match = text.match(/Security[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+    match = text.match(/Deposit[:\s]*RM?\s*([\d,]+\.?\d*)/im);
   }
   if (match) {
     result.securityDeposit = parseAmount(match[1]);
   }
   
-  // ── Strategy 2: Legacy field-style extraction (fallback) ──
+  // ═══════════════════════════════════════════════════════════
+  // FALLBACK: If Strategy A didn't find enough fields, try Strategy B
+  // ═══════════════════════════════════════════════════════════
+  
+  const strategyAMatchCount = [result.tenantName, result.propertyAddress, result.monthlyRent, result.startDate, result.endDate].filter(f => f !== null).length;
+  
+  // Also check if this looks like a SCHEDULE format (has "SCHEDULE" keyword or numbered items)
+  const isScheduleFormat = /SCHEDULE|Date\s+of\s+Commencement|Reserved\s+Rent|Date\s+of\s+Termination/i.test(text);
+  
+  if (strategyAMatchCount < 3 || (isScheduleFormat && !result.unitNumber)) {
+    // ── Strategy B: Table/SCHEDULE format ──
+    
+    if (!result.tenantName) {
+      match = text.match(/Tenant\s+Name\s*\n\s*NRIC\s*\n\s*\d{6}-\d{4}-\d{4}\s*\n\s*Address\s*\n\s*[^\n]*\s*\n\s*[^\n]*\s*\n\s*([A-Z][A-Z\s]{5,})/i);
+      if (!match) match = text.match(/Tenant\s+Name\s*\n\s*\n\s*([A-Z][A-Z\s]{5,})/i);
+      if (!match) match = text.match(/Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?\d{6}-\d{4}-\d{4})?(?:Address[^0-9]*)?([A-Z][A-Z\s]{5,})/i);
+      if (!match) match = text.match(/3\)\s*Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?)?([A-Z][A-Z\s\.]+)/i);
+      if (match) {
+        result.tenantName = match[1].trim().replace(/\s+/g, ' ').toUpperCase();
+        const metaWords = 'NRIC|IC|PASSPORT|DATE\\s+OF\\s+BIRTH|BIRTHDATE|ADDRESS|ADDR|NO\\.?|LOT|JALAN|JL|TMN|TAMAN|KOTA|CITY|POSTAL\\s*CODE|POS\\s*KOD|WANGISAN|NAME|BUILDING|BLOCK|STREET';
+        result.tenantName = result.tenantName.replace(new RegExp(`\\b(?:${metaWords})\\b`, 'gi'), '');
+        result.tenantName = result.tenantName.replace(/\s{2,}/g, ' ').trim();
+      }
+    }
+    
+    if (!result.propertyAddress) {
+      match = text.match(/Property\s+Address[^0-9]*?([^\n]+)/i);
+      if (!match) match = text.match(/4\)\s*Property\s+Address[^0-9]*?([^\n]+)/i);
+      if (match) result.propertyAddress = match[1].trim();
+    }
+    
+    if (!result.startDate) {
+      match = text.match(/Date\s+of\s+Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
+      if (!match) match = text.match(/Commencement[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+      if (!match) match = text.match(/Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
+      if (match) result.startDate = parseDate(match[1].trim());
+    }
+    
+    if (!result.endDate) {
+      match = text.match(/Date\s+of\s+Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
+      if (!match) match = text.match(/Termination[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+      if (!match) match = text.match(/Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
+      if (match) result.endDate = parseDate(match[1].trim());
+    }
+    
+    if (!result.monthlyRent) {
+      match = text.match(/Reserved\s+Rent[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+      if (!match) match = text.match(/per\s+month[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+      if (!match) match = text.match(/Rent[:\s]*RM?\s*([\d,]+\.?\d*)/i);
+      if (match) result.monthlyRent = parseAmount(match[1]);
+    }
+  }
+  
   if (!result.tenantName) {
-    match = text.match(/(?:Tenant|Lessee)[:\s]+([A-Z][a-zA-Z\s\.]+?)(?=IC|No|:|$)/i);
-    if (match) result.tenantName = match[1].trim();
+    match = text.match(/Tenant\s+Name\s*\n\s*NRIC\s*\n\s*\d{6}-\d{4}-\d{4}\s*\n\s*Address\s*\n\s*[^\n]*\s*\n\s*[^\n]*\s*\n\s*([A-Z][A-Z\s]{5,})/i);
+    if (!match) match = text.match(/Tenant\s+Name\s*\n\s*\n\s*([A-Z][A-Z\s]{5,})/i);
+    if (!match) match = text.match(/Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?\d{6}-\d{4}-\d{4})?(?:Address[^0-9]*)?([A-Z][A-Z\s]{5,})/i);
+    if (!match) match = text.match(/3\)\s*Tenant\s+Name[^0-9]*?(?:NRIC[^0-9]*?)?([A-Z][A-Z\s\.]+)/i);
+    if (match) {
+      result.tenantName = match[1].trim().replace(/\s+/g, ' ').toUpperCase();
+      const metaWords = 'NRIC|IC|PASSPORT|DATE\\s+OF\\s+BIRTH|BIRTHDATE|ADDRESS|ADDR|NO\\.?|LOT|JALAN|JL|TMN|TAMAN|KOTA|CITY|POSTAL\\s*CODE|POS\\s*KOD|WANGISAN|NAME|BUILDING|BLOCK|STREET';
+      result.tenantName = result.tenantName.replace(new RegExp(`\\b(?:${metaWords})\\b`, 'gi'), '');
+      result.tenantName = result.tenantName.replace(/\s{2,}/g, ' ').trim();
+    }
+  }
+  
+  if (!result.propertyAddress) {
+    match = text.match(/Property\s+Address[^0-9]*?([^\n]+)/i);
+    if (!match) match = text.match(/4\)\s*Property\s+Address[^0-9]*?([^\n]+)/i);
+    if (match) result.propertyAddress = match[1].trim();
+  }
+  
+  if (!result.startDate) {
+    match = text.match(/Date\s+of\s+Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
+    if (!match) match = text.match(/Commencement[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+    if (!match) match = text.match(/Commencement[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
+    if (match) result.startDate = parseDate(match[1].trim());
+  }
+  
+  if (!result.endDate) {
+    match = text.match(/Date\s+of\s+Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z][a-z]+(?:\s+\d{4})?)/i);
+    if (!match) match = text.match(/Termination[^0-9]*?(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i);
+    if (!match) match = text.match(/Termination[^0-9]*?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Z]+\s+\d{4})/i);
+    if (match) result.endDate = parseDate(match[1].trim());
   }
   
   if (!result.monthlyRent) {
-    match = text.match(/(?:Monthly\s+)?Rent[:\s]*RM?\s*([\d,]+\.?\d*)/i);
+    match = text.match(/Reserved\s+Rent[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+    if (!match) match = text.match(/per\s+month[^0-9]*?RM\s*([\d,]+\.?\d*)/i);
+    if (!match) match = text.match(/Rent[:\s]*RM?\s*([\d,]+\.?\d*)/i);
     if (match) result.monthlyRent = parseAmount(match[1]);
   }
   
-  // Validate: need at least 3 key fields to consider it a match
+  // ═══════════════════════════════════════════════════════════
+  // VALIDATION
+  // ═══════════════════════════════════════════════════════════
+  
   const keyFields = [result.tenantName, result.propertyAddress, result.monthlyRent, result.startDate, result.endDate];
   const matchedCount = keyFields.filter(f => f !== null).length;
   
-  // DEBUG: log parsing results
   console.log('[Parser] Tenancy match count:', matchedCount, '/', keyFields.length);
   console.log('[Parser] Fields:', JSON.stringify(result));
   
